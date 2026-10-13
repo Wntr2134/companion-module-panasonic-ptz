@@ -1,11 +1,8 @@
 /* eslint-disable no-unused-vars */
 import { c } from './choices.js'
 import { getAndUpdateSeries } from './common.js'
-import got from 'got'
-
-// Short timeout and no automatic retries: got retries GETs twice by default, which can
-// repeat a move, and a camera that has gone away would otherwise hang the action.
-export const GOT_OPTIONS = { timeout: { request: 2000 }, retry: { limit: 0 } }
+import { baseUrl } from './transport.js'
+import { getStepActionDefinitions } from './steps.js'
 
 // ########################
 // #### Value Look Ups ####
@@ -25,58 +22,16 @@ for (let i = 0; i < 100; ++i) {
 // ######################
 
 export async function sendPTZ(self, str) {
-	if (str) {
-		const url = `http://${self.config.host}:${self.config.httpPort}/cgi-bin/aw_ptz?cmd=%23${str}&res=1`
-		if (self.config.debug) {
-			self.log('debug', `Sending : ${url}`)
-		}
-
-		try {
-			const response = await got.get(url, GOT_OPTIONS)
-
-			// console.log("Result from REST:" + result.data);
-		} catch (err) {
-			throw new Error(`Action failed: ${url}`)
-		}
-	}
+	if (str) return self.transport.get(`${baseUrl(self)}/cgi-bin/aw_ptz?cmd=%23${str}&res=1`)
 }
 
 export async function sendCam(self, str) {
-	if (str) {
-		const url = `http://${self.config.host}:${self.config.httpPort}/cgi-bin/aw_cam?cmd=${str}&res=1`
-
-		if (self.config.debug) {
-			self.log('debug', `Sending : ${url}`)
-		}
-
-		try {
-			const response = await got.get(url, GOT_OPTIONS)
-
-			// console.log("Result from REST:" + result.data);
-		} catch (err) {
-			throw new Error(`Action failed: ${url}`)
-		}
-	}
+	if (str) return self.transport.get(`${baseUrl(self)}/cgi-bin/aw_cam?cmd=${str}&res=1`)
 }
 
 export async function sendWeb(self, str) {
 	// Currently Only for web commands that don't requre Admin rights
-
-	if (str) {
-		const url = `http://${self.config.host}:${self.config.httpPort}/cgi-bin/${str}`
-
-		if (self.config.debug) {
-			self.log('debug', `Sending : ${url}`)
-		}
-
-		try {
-			const response = await got.get(url, GOT_OPTIONS)
-
-			// console.log("Result from REST:" + result.data);
-		} catch (err) {
-			throw new Error(`Action failed: ${url}`)
-		}
-	}
+	if (str) return self.transport.get(`${baseUrl(self)}/cgi-bin/${str}`)
 }
 
 // ##########################
@@ -1227,6 +1182,14 @@ export function getActionDefinitions(self) {
 			],
 			callback: async (action) => {
 				await sendPTZ(self, 'M' + action.options.val)
+				// Flash "SAVED" on buttons showing this preset for a couple of seconds
+				self.presetSaved = { val: action.options.val, at: Date.now() }
+				self.checkFeedbacks('presetSaved')
+				clearTimeout(self.presetSavedTimer)
+				self.presetSavedTimer = setTimeout(() => {
+					self.presetSaved = null
+					self.checkFeedbacks('presetSaved')
+				}, 2500)
 			},
 		}
 	}
@@ -1244,6 +1207,45 @@ export function getActionDefinitions(self) {
 			],
 			callback: async (action) => {
 				await sendPTZ(self, 'R' + action.options.val)
+				self.presetRecalled = action.options.val
+				self.checkFeedbacks('presetActive')
+			},
+		}
+	}
+	if (seriesActions.preset) {
+		actions.recallPsetNumber = {
+			name: 'Preset - Recall by number (variables allowed)',
+			description:
+				'For linking: e.g. $(digico-osc:snap_current_num) recalls the camera preset with the same number as the current console snapshot. Numbers are 1-100 as shown on the camera.',
+			options: [
+				{
+					type: 'textinput',
+					label: 'Preset number (1-100)',
+					id: 'number',
+					default: '1',
+					useVariables: true,
+				},
+				{
+					type: 'textinput',
+					label: 'Add (offset), e.g. 10 to map snapshot 1 to preset 11',
+					id: 'offset',
+					default: '0',
+					useVariables: true,
+				},
+			],
+			callback: async (action, context) => {
+				const parse = context?.parseVariablesInString ?? ((t) => self.parseVariablesInString(t))
+				const n = Math.round(
+					Number(await parse(String(action.options.number))) + Number(await parse(String(action.options.offset ?? '0')))
+				)
+				if (!Number.isFinite(n) || n < 1 || n > 100) {
+					self.log('warn', `Preset number "${action.options.number}" is not 1-100; nothing recalled`)
+					return
+				}
+				const val = String(n - 1).padStart(2, '0')
+				await sendPTZ(self, 'R' + val)
+				self.presetRecalled = val
+				self.checkFeedbacks('presetActive')
 			},
 		}
 	}
@@ -1530,6 +1532,8 @@ export function getActionDefinitions(self) {
 			}
 		}
 	}
+
+	Object.assign(actions, getStepActionDefinitions(self))
 
 	return actions
 }

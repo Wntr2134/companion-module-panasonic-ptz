@@ -168,3 +168,59 @@ A list of all the available Feedbacks in this module sorted into the following c
 Current support is based on "HD/4K Integrated Camera Interface Specifications" version 1.12 from Apr. 27, 2020.
 
 For additional actions, please raise a feature request on [GitHub](https://github.com/bitfocus/companion-module-panasonic-ptz/).
+
+## Knob (encoder) control: Will's additions
+
+These are for rotary controls like the Ulanzi D200X knobs or a Stream Deck +. Each knob click moves the camera **one fixed step**. Turning fast adds up the clicks instead of losing them or running the lens to the end.
+
+**Quick start:** drag a preset from the **Knobs** category (Pan, Tilt, Zoom, Focus) onto a knob's button. Rotary actions are already on, and the button shows the live position.
+
+| Action | What it does |
+|---|---|
+| Knob - Pan/Tilt step | Relative move (`#RPC`), the same size both ways. |
+| Knob - Zoom step | Moves to an exact zoom position (`#AXZ`). "Camera web step" method = `directctrl?zoom=±1`. |
+| Knob - Focus step | Moves to an exact focus position (`#AXF`). Can switch the camera to manual focus first. |
+| Lens - Go to zoom/focus position (%) | 0% = wide / near, 100% = tele / far. |
+| Position - Refresh … variables | Reads the current positions now. |
+
+**Step size: 1 to 10** (default 2) on every knob action. 1 gives tiny steps that feel smooth when you keep turning; 10 gives big jumps.
+
+| Size | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Pan/tilt (camera units) | 256 | 640 | 1024 | 1280 | 1920 | 2560 | 3584 | 5120 | 7168 | 10240 |
+| Zoom/focus (% of range) | 0.4 | 1 | 1.5 | 2 | 3 | 4 | 6 | 8 | 12 | 16 |
+
+Buttons made with the earlier free-number step are converted to the nearest size automatically.
+
+**Variables:** `zoomPosition`, `focusPosition` (%), `zoomPositionRaw`, `focusPositionRaw`, `panPosition`, `tiltPosition`.
+
+**Settings:**
+- **Minimum gap between commands**, default 130 ms (Panasonic's minimum). Raise it if fast spins still drop steps.
+- **Position read interval**, default 3 s; 0 = off.
+
+**Other fixes in this version:**
+- Ticking "adjust on speed change" no longer throws an error.
+- Commands are queued and spaced, time out after 2 s, and are never automatically retried. A retry could make a relative move happen twice.
+- Camera error replies (`er1`/`er2`/`er3`) are logged.
+- Camera events split or joined across TCP packets are handled.
+
+## Preset buttons: press to recall, hold 5 s to save
+
+Presets → **Save/Recall button** → *Preset N: press = recall, hold 5 s = save*.
+- **Short press:** recall preset N. The button turns green while it's the last preset recalled from Companion.
+- **Hold 5 seconds:** save the camera's current position as preset N. It saves while you're still holding, the button flashes **SAVED**, and letting go doesn't also recall.
+- **Hold again** any time to overwrite it.
+
+## Selected camera: one set of knobs for several cameras
+
+1. **Variables** page → add a **custom variable** called `ptz_cam` with value `1`.
+2. On each Panasonic connection, set **Camera number** (1, 2, 3…) in its settings.
+3. Make camera select keys. Action: **internal → Custom variable: Set value**, `ptz_cam` = 1 (or 2, 3…). For the highlight, add the Panasonic feedback **Camera - This camera is the selected one** from that camera's connection.
+4. For each knob, drag **Presets → Knobs (selected camera)** from camera 1's connection. Then, in the button, add the same knob actions from camera 2's connection (and camera 3's…), with **Only when this camera is selected** ticked.
+
+Turning a knob then only moves the selected camera.
+
+## Preset by number (for linking)
+**Preset - Recall by number (variables allowed)** accepts a number or a variable, plus an optional offset.
+
+Example: `$(digico-osc:snap_current_num)` recalls the camera preset that matches the console's current snapshot. Put it in a trigger on that variable. See `docs/show-cues.md` in the repo.

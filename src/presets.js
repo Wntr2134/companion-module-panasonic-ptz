@@ -1623,12 +1623,13 @@ export function getPresetDefinitions(self) {
 
 	if (seriesActions.preset) {
 		for (let save = 0; save < 100; save++) {
+			const nr = save.toString(10).padStart(2, '0').slice(-2)
 			presets[`save-recall-presets-${save}`] = {
 				type: 'button',
 				category: 'Save/Recall button',
-				name: 'Save Recall Preset ' + parseInt(save + 1),
+				name: `Preset ${save + 1}: press = recall, hold 5 s = save`,
 				style: {
-					text: 'Recall\n' + parseInt(save + 1),
+					text: 'PRESET\\n' + parseInt(save + 1),
 					textExpression: false,
 					size: 'auto',
 					color: 16777215,
@@ -1637,22 +1638,22 @@ export function getPresetDefinitions(self) {
 				steps: [
 					{
 						down: [],
-						up: [
-							{
-								actionId: 'recallPset',
-								options: {
-									val: save.toString(10).padStart(2, '0').slice(-2),
-								},
-							},
-						],
-						2000: [
-							{
-								actionId: 'savePset',
-								options: {
-									val: save.toString(10).padStart(2, '0').slice(-2),
-								},
-							},
-						],
+						// Short press: recall
+						up: [{ actionId: 'recallPset', options: { val: nr } }],
+						// Held for 5 s: save the current camera position (fires while still held)
+						5000: { options: { runWhileHeld: true }, actions: [{ actionId: 'savePset', options: { val: nr } }] },
+					},
+				],
+				feedbacks: [
+					{
+						feedbackId: 'presetActive',
+						options: { val: nr },
+						style: { bgcolor: combineRgb(0, 120, 0), color: 16777215 },
+					},
+					{
+						feedbackId: 'presetSaved',
+						options: { val: nr },
+						style: { bgcolor: combineRgb(200, 0, 0), color: 16777215, text: 'SAVED\\n' + parseInt(save + 1) },
 					},
 				],
 			}
@@ -2038,6 +2039,107 @@ export function getPresetDefinitions(self) {
 			],
 			feedbacks: [],
 		}
+	}
+
+	// ##############################
+	// #### Knob (encoder) Presets ####
+	// ##############################
+	// Rotary buttons: turn = one fixed step per click. Push = the action shown.
+	const label = self.label || 'Panasonic-PTZ'
+	let knobCategory = 'Knobs'
+	const knob = (id, name, text, left, right, push) => {
+		presets[id] = {
+			type: 'button',
+			category: knobCategory,
+			name,
+			options: { rotaryActions: true },
+			style: {
+				text,
+				size: '14',
+				color: foregroundColor,
+				bgcolor: combineRgb(40, 40, 40),
+			},
+			steps: [
+				{
+					down: push ? [push] : [],
+					up: [],
+					rotate_left: [left],
+					rotate_right: [right],
+				},
+			],
+			feedbacks: [],
+		}
+	}
+	if (seriesActions.panTilt) {
+		knob(
+			'knob-pan',
+			'Pan knob',
+			`PAN\\n$(${label}:panPosition)`,
+			{ actionId: 'knobPanTiltStep', options: { direction: 'left', size: 2 } },
+			{ actionId: 'knobPanTiltStep', options: { direction: 'right', size: 2 } }
+		)
+		knob(
+			'knob-tilt',
+			'Tilt knob',
+			`TILT\\n$(${label}:tiltPosition)`,
+			{ actionId: 'knobPanTiltStep', options: { direction: 'down', size: 2 } },
+			{ actionId: 'knobPanTiltStep', options: { direction: 'up', size: 2 } }
+		)
+	}
+	if (seriesActions.zoom) {
+		knob(
+			'knob-zoom',
+			'Zoom knob',
+			`ZOOM\\n$(${label}:zoomPosition)%`,
+			{ actionId: 'knobZoomStep', options: { direction: 'out', size: 2, method: 'position' } },
+			{ actionId: 'knobZoomStep', options: { direction: 'in', size: 2, method: 'position' } }
+		)
+	}
+	if (seriesActions.focus) {
+		knob(
+			'knob-focus',
+			'Focus knob',
+			`FOCUS\\n$(${label}:focusPosition)%`,
+			{ actionId: 'knobFocusStep', options: { direction: 'near', size: 2, manual: true } },
+			{ actionId: 'knobFocusStep', options: { direction: 'far', size: 2, manual: true } }
+		)
+	}
+
+	// Same knobs, but they only move this camera while it is the selected one.
+	knobCategory = 'Knobs (selected camera)'
+	if (seriesActions.panTilt) {
+		knob(
+			'knob-sel-pan',
+			'Pan knob',
+			`PAN\\n$(${label}:panPosition)`,
+			{ actionId: 'knobPanTiltStep', options: { onlyIfSelected: true, direction: 'left', size: 2 } },
+			{ actionId: 'knobPanTiltStep', options: { onlyIfSelected: true, direction: 'right', size: 2 } }
+		)
+		knob(
+			'knob-sel-tilt',
+			'Tilt knob',
+			`TILT\\n$(${label}:tiltPosition)`,
+			{ actionId: 'knobPanTiltStep', options: { onlyIfSelected: true, direction: 'down', size: 2 } },
+			{ actionId: 'knobPanTiltStep', options: { onlyIfSelected: true, direction: 'up', size: 2 } }
+		)
+	}
+	if (seriesActions.zoom) {
+		knob(
+			'knob-sel-zoom',
+			'Zoom knob',
+			`ZOOM\\n$(${label}:zoomPosition)%`,
+			{ actionId: 'knobZoomStep', options: { onlyIfSelected: true, direction: 'out', size: 2, method: 'position' } },
+			{ actionId: 'knobZoomStep', options: { onlyIfSelected: true, direction: 'in', size: 2, method: 'position' } }
+		)
+	}
+	if (seriesActions.focus) {
+		knob(
+			'knob-sel-focus',
+			'Focus knob',
+			`FOCUS\\n$(${label}:focusPosition)%`,
+			{ actionId: 'knobFocusStep', options: { onlyIfSelected: true, direction: 'near', size: 2, manual: true } },
+			{ actionId: 'knobFocusStep', options: { onlyIfSelected: true, direction: 'far', size: 2, manual: true } }
+		)
 	}
 
 	return presets

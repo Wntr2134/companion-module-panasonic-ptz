@@ -1,6 +1,6 @@
 import { runEntrypoint, InstanceBase, InstanceStatus } from '@companion-module/base'
 import { UpgradeScripts } from './upgrades.js'
-import { getActionDefinitions, GOT_OPTIONS } from './actions.js'
+import { getActionDefinitions } from './actions.js'
 import { getFeedbackDefinitions } from './feedbacks.js'
 import { getPresetDefinitions } from './presets.js'
 import { setVariables, checkVariables } from './variables.js'
@@ -8,6 +8,11 @@ import { ConfigFields, applyConfigDefaults } from './config.js'
 import * as net from 'net'
 import got from 'got'
 import EventEmitter from 'events'
+import { CameraTransport, setStatus } from './transport.js'
+import { StepController, parsePosition } from './steps.js'
+
+// Short timeout and no automatic retries for every direct request.
+const GOT_OPTIONS = { timeout: { request: 2000 }, retry: { limit: 0 } }
 
 // ########################
 // #### Instance setup ####
@@ -41,11 +46,11 @@ class PanasonicPTZInstance extends InstanceBase {
 
 			this.log('info', 'subscribed: ' + url)
 
-			this.updateStatus(InstanceStatus.Ok)
+			setStatus(this, InstanceStatus.Ok)
 		} catch (err) {
 			this.log('error', 'Error from PTZ: ' + String(err))
 
-			this.updateStatus(InstanceStatus.Disconnected)
+			setStatus(this, InstanceStatus.Disconnected)
 		}
 	}
 
@@ -106,7 +111,6 @@ class PanasonicPTZInstance extends InstanceBase {
 						stored = true
 					}
 
-					// Update Varibles and Feedbacks
 					if (stored) {
 						this.checkVariables()
 						this.checkFeedbacks()
@@ -192,6 +196,12 @@ class PanasonicPTZInstance extends InstanceBase {
 		}
 	}
 	storeData(str) {
+		if (!str || !str[0]) return
+
+		// Lens / head positions (axz…, axf…, aPC…), from events or camdata.html
+		const pos = parsePosition(str[0])
+		if (Object.keys(pos).length) this.steps?.store(pos)
+
 		if (str[0].substring(0, 3) === 'rER') {
 			if (str[0] === 'rER00') {
 				this.data.error = 'No Errors'
@@ -308,6 +318,8 @@ class PanasonicPTZInstance extends InstanceBase {
 	}
 	// When module gets deleted
 	async destroy() {
+		this.stopPositionPoll()
+
 		// Remove TCP Server and close all connections
 		if (this.server) {
 			// Stop getting Status Updates
@@ -319,8 +331,26 @@ class PanasonicPTZInstance extends InstanceBase {
 		}
 	}
 	// Initalize module
+	startPositionPoll() {
+		this.stopPositionPoll()
+		const seconds = Number(this.config.positionPoll)
+		if (!this.config.host || !(seconds > 0)) return
+		this.positionTimer = setInterval(() => {
+			this.steps.refreshPositions().catch(() => null)
+		}, seconds * 1000)
+		this.steps.refreshPositions().catch(() => null)
+	}
+
+	stopPositionPoll() {
+		if (this.positionTimer) clearInterval(this.positionTimer)
+		this.positionTimer = undefined
+	}
+
 	async init(config) {
-		this.config = config
+		this.config = applyConfigDefaults(config)
+		this.transport = new CameraTransport(this)
+		this.steps = new StepController(this)
+		this.speedChangeEmitter = new EventEmitter()
 
 		this.data = {
 			debug: false,
@@ -381,12 +411,11 @@ class PanasonicPTZInstance extends InstanceBase {
 		this.checkVariables()
 		this.init_feedbacks()
 		this.checkFeedbacks()
-
-		this.speedChangeEmitter = new EventEmitter()
+		this.startPositionPoll()
 	}
 	// Update module after a config change
 	async configUpdated(config) {
-		this.config = config
+		this.config = applyConfigDefaults(config)
 		this.updateStatus(InstanceStatus.Connecting)
 		this.getCameraInformation()
 		this.init_tcp()
@@ -396,6 +425,7 @@ class PanasonicPTZInstance extends InstanceBase {
 		this.checkVariables()
 		this.init_feedbacks()
 		this.checkFeedbacks()
+		this.startPositionPoll()
 	}
 
 	// Return config fields for web config

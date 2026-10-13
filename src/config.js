@@ -1,4 +1,5 @@
 import { MODELS } from './models.js'
+import { DEFAULT_COMMAND_INTERVAL } from './transport.js'
 
 export function applyConfigDefaults(config) {
 	return {
@@ -9,6 +10,10 @@ export function applyConfigDefaults(config) {
 		autoTCP: config.autoTCP ?? true,
 		model: config.model ?? 'Auto',
 		debug: config.debug ?? false,
+		commandInterval: config.commandInterval ?? DEFAULT_COMMAND_INTERVAL,
+		positionPoll: config.positionPoll ?? 3,
+		cameraNumber: config.cameraNumber ?? 1,
+		selectVariable: config.selectVariable ?? '$(custom:ptz_cam)',
 	}
 }
 
@@ -120,6 +125,49 @@ export const ConfigFields = [
 		width: 4,
 		label: 'Manual TCP Port',
 		value: 'TCP Port (Default: 31004) only used when "Auto TCP" is OFF/Disabled',
+	},
+	{
+		type: 'number',
+		id: 'commandInterval',
+		label: 'Minimum gap between commands (ms)',
+		width: 4,
+		default: 130,
+		min: 0,
+		max: 1000,
+		tooltip: 'Panasonic asks for at least 130 ms. Raise it if fast knob turns still drop steps.',
+	},
+	{
+		type: 'number',
+		id: 'positionPoll',
+		label: 'Read zoom/focus/pan/tilt position every (seconds, 0 = off)',
+		width: 4,
+		default: 3,
+		min: 0,
+		max: 60,
+	},
+	{
+		type: 'number',
+		id: 'cameraNumber',
+		label: 'Camera number (for shared "selected camera" knobs)',
+		width: 4,
+		default: 1,
+		min: 1,
+		max: 99,
+	},
+	{
+		type: 'textinput',
+		id: 'selectVariable',
+		label: 'Variable holding the selected camera number',
+		width: 4,
+		default: '$(custom:ptz_cam)',
+		tooltip: 'Create a custom variable called ptz_cam (Variables page), and buttons that set it to 1, 2, 3…',
+	},
+	{
+		type: 'static-text',
+		id: 'dummy4',
+		width: 12,
+		label: ' ',
+		value: ' ',
 	},
 	{
 		type: 'checkbox',
